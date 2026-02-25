@@ -1,405 +1,384 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  Calculator, 
-  TrendingUp, 
-  Info, 
-  Wallet, 
-  ArrowRight,
-  PieChart as PieIcon,
-  HelpCircle,
-  Hash,
-  ArrowDownCircle,
-  ShieldCheck
-} from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UK Tax & Dividend Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-900 min-h-screen">
 
-/**
- * UK Tax & Dividend Calculator Dashboard
- * Logic handles: Personal Allowance Taper, National Insurance, 
- * and Stacked Dividend taxation rules.
- */
-
-const App = () => {
-  // --- State ---
-  const [salary, setSalary] = useState(55000);
-  const [dividends, setDividends] = useState(10000);
-  const [taxYear, setTaxYear] = useState('2024/25');
-
-  // --- Constants ---
-  const CONFIG = {
-    '2024/25': {
-      personalAllowance: 12570,
-      taperThreshold: 100000,
-      basicRateMax: 50270,
-      higherRateMax: 125140,
-      dividendAllowance: 500,
-      niPrimaryThreshold: 12570,
-      niUpperLimit: 50270,
-      niRates: { basic: 0.08, upper: 0.02 }
-    },
-    '2025/26': {
-      personalAllowance: 12570,
-      taperThreshold: 100000,
-      basicRateMax: 50270,
-      higherRateMax: 125140,
-      dividendAllowance: 500,
-      niPrimaryThreshold: 12570,
-      niUpperLimit: 50270,
-      niRates: { basic: 0.08, upper: 0.02 }
-    }
-  };
-
-  // --- Calculation Engine ---
-  const results = useMemo(() => {
-    const cfg = CONFIG[taxYear];
-    const totalIncome = salary + dividends;
-
-    // 1. Personal Allowance Taper Logic (£1 loss for every £2 over £100k)
-    let adjustedPA = cfg.personalAllowance;
-    if (totalIncome > cfg.taperThreshold) {
-      const reduction = Math.floor((totalIncome - cfg.taperThreshold) / 2);
-      adjustedPA = Math.max(0, cfg.personalAllowance - reduction);
-    }
-
-    // 2. Salary Tax Calculation
-    let remainingSalary = salary;
-    let salaryTax = 0;
-    const salaryBands = [];
-
-    const paUsedBySalary = Math.min(salary, adjustedPA);
-    salaryBands.push({ label: 'Personal Allowance', amount: paUsedBySalary, tax: 0 });
-    remainingSalary -= paUsedBySalary;
-
-    // Basic Rate (20%)
-    const basicBandSize = Math.max(0, cfg.basicRateMax - adjustedPA);
-    const inBasic = Math.min(remainingSalary, basicBandSize);
-    if (inBasic > 0) {
-      const tax = inBasic * 0.20;
-      salaryBands.push({ label: 'Basic Rate (20%)', amount: inBasic, tax });
-      salaryTax += tax;
-      remainingSalary -= inBasic;
-    }
-
-    // Higher Rate (40%)
-    const higherBandSize = cfg.higherRateMax - cfg.basicRateMax;
-    const inHigher = Math.min(remainingSalary, higherBandSize);
-    if (inHigher > 0) {
-      const tax = inHigher * 0.40;
-      salaryBands.push({ label: 'Higher Rate (40%)', amount: inHigher, tax });
-      salaryTax += tax;
-      remainingSalary -= inHigher;
-    }
-
-    // Additional Rate (45%)
-    if (remainingSalary > 0) {
-      const tax = remainingSalary * 0.45;
-      salaryBands.push({ label: 'Additional Rate (45%)', amount: remainingSalary, tax });
-      salaryTax += tax;
-    }
-
-    // 3. National Insurance
-    let niDue = 0;
-    if (salary > cfg.niPrimaryThreshold) {
-      const basicNi = Math.min(salary, cfg.niUpperLimit) - cfg.niPrimaryThreshold;
-      niDue += basicNi * cfg.niRates.basic;
-      if (salary > cfg.niUpperLimit) {
-        niDue += (salary - cfg.niUpperLimit) * cfg.niRates.upper;
-      }
-    }
-
-    // 4. Dividend Tax Calculation (Stacked on top of Salary)
-    let remainingPA = Math.max(0, adjustedPA - salary);
-    let workingDivs = dividends;
-    let dividendTax = 0;
-    const dividendBands = [];
-
-    // Use remaining PA for dividends
-    const divInPA = Math.min(workingDivs, remainingPA);
-    if (divInPA > 0) {
-      dividendBands.push({ label: 'Allowance (PA)', amount: divInPA, tax: 0 });
-      workingDivs -= divInPA;
-    }
-
-    // Dividend Allowance (£500)
-    const divAllowanceUsed = Math.min(workingDivs, cfg.dividendAllowance);
-    if (divAllowanceUsed > 0) {
-      dividendBands.push({ label: 'Div. Allowance', amount: divAllowanceUsed, tax: 0 });
-      workingDivs -= divAllowanceUsed;
-    }
-
-    // Taxable Dividends Stacking
-    if (workingDivs > 0) {
-      let currentPosition = salary + (dividends - workingDivs);
-      
-      // Basic Rate Dividends (8.75%)
-      if (currentPosition < cfg.basicRateMax) {
-        const space = cfg.basicRateMax - currentPosition;
-        const amount = Math.min(workingDivs, space);
-        const tax = amount * 0.0875;
-        dividendBands.push({ label: 'Basic Rate (8.75%)', amount, tax });
-        dividendTax += tax;
-        workingDivs -= amount;
-        currentPosition += amount;
-      }
-
-      // Higher Rate Dividends (33.75%)
-      if (workingDivs > 0 && currentPosition < cfg.higherRateMax) {
-        const space = cfg.higherRateMax - currentPosition;
-        const amount = Math.min(workingDivs, space);
-        const tax = amount * 0.3375;
-        dividendBands.push({ label: 'Higher Rate (33.75%)', amount, tax });
-        dividendTax += tax;
-        workingDivs -= amount;
-        currentPosition += amount;
-      }
-
-      // Additional Rate Dividends (39.35%)
-      if (workingDivs > 0) {
-        const tax = workingDivs * 0.3935;
-        dividendBands.push({ label: 'Add. Rate (39.35%)', amount: workingDivs, tax });
-        dividendTax += tax;
-      }
-    }
-
-    const totalTax = salaryTax + dividendTax + niDue;
-    return {
-      totalTax,
-      salaryTax,
-      dividendTax,
-      niDue,
-      netIncome: totalIncome - totalTax,
-      totalIncome,
-      adjustedPA,
-      salaryBands,
-      dividendBands,
-      isTapered: adjustedPA < cfg.personalAllowance
-    };
-  }, [salary, dividends, taxYear]);
-
-  // --- Helpers ---
-  const fmt = (v) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(v);
-
-  const chartData = [
-    { name: 'Net Pay', value: results.netIncome, color: '#10b981' },
-    { name: 'Salary Tax', value: results.salaryTax, color: '#3b82f6' },
-    { name: 'Div Tax', value: results.dividendTax, color: '#f59e0b' },
-    { name: 'NI', value: results.niDue, color: '#ef4444' },
-  ].filter(d => d.value > 0);
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-slate-900">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-          <div>
-            <h1 className="text-3xl font-extrabold flex items-center gap-3 text-slate-800">
-              <div className="p-2 bg-indigo-600 rounded-lg text-white">
-                <Calculator size={28} />
-              </div>
-              UK Tax Dashboard
-            </h1>
-            <p className="text-slate-500 mt-1">Salary & Dividend Liability Calculator</p>
-          </div>
-          
-          <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
-            {['2024/25', '2025/26'].map(year => (
-              <button
-                key={year}
-                onClick={() => setTaxYear(year)}
-                className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-                  taxYear === year ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-gray-50'
-                }`}
-              >
-                {year}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Inputs */}
-          <div className="lg:col-span-4 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
-                <Wallet size={20} className="text-indigo-500" />
-                Annual Income
-              </h2>
-              
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Gross Salary</label>
-                  <div className="relative group">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">£</span>
-                    <input 
-                      type="number"
-                      value={salary}
-                      onChange={(e) => setSalary(Number(e.target.value))}
-                      className="w-full pl-9 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl outline-none transition-all font-bold text-lg"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Gross Dividends</label>
-                  <div className="relative group">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">£</span>
-                    <input 
-                      type="number"
-                      value={dividends}
-                      onChange={(e) => setDividends(Number(e.target.value))}
-                      className="w-full pl-9 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl outline-none transition-all font-bold text-lg"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {results.isTapered && (
-                <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3">
-                  <Info className="text-amber-600 shrink-0" size={20} />
-                  <p className="text-xs text-amber-800 leading-relaxed">
-                    <span className="font-bold">Allowance Taper:</span> Your total income exceeds £100,000. Your Personal Allowance has been reduced to <span className="font-bold">{fmt(results.adjustedPA)}</span>.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-indigo-700 p-6 rounded-2xl text-white shadow-xl shadow-indigo-100">
-              <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest mb-1">Take Home Pay</p>
-              <h3 className="text-4xl font-black mb-1">{fmt(results.netIncome)}</h3>
-              <div className="flex items-center gap-2 text-indigo-200 text-sm">
-                <ArrowDownCircle size={14} />
-                <span>≈ {fmt(results.netIncome / 12)} per month</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Results Display */}
-          <div className="lg:col-span-8 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Pie Chart */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center">
-                <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2 self-start mb-4 uppercase tracking-wider">
-                  <PieIcon size={16} /> Income Split
-                </h3>
-                <div className="h-[240px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={chartData}
-                        innerRadius={60}
-                        outerRadius={85}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {chartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip formatter={(v) => fmt(v)} />
-                      <Legend verticalAlign="bottom" height={36} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Totals Table */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-                <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2 mb-6 uppercase tracking-wider">
-                  <TrendingUp size={16} /> Summary
-                </h3>
-                <div className="space-y-4 flex-grow flex flex-col justify-center">
-                  {[
-                    { label: 'Total Gross', value: results.totalIncome, color: 'text-slate-800' },
-                    { label: 'Salary Tax', value: -results.salaryTax, color: 'text-blue-600' },
-                    { label: 'Dividend Tax', value: -results.dividendTax, color: 'text-amber-600' },
-                    { label: 'Nat. Insurance', value: -results.niDue, color: 'text-rose-500' }
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                      <span className="text-sm text-slate-500 flex items-center gap-2">
-                        <ArrowRight size={12} className="text-slate-300" /> {item.label}
-                      </span>
-                      <span className={`font-bold ${item.color}`}>{fmt(item.value)}</span>
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+            <div>
+                <h1 class="text-3xl font-extrabold flex items-center gap-3 text-slate-800">
+                    <div class="p-2 bg-indigo-600 rounded-lg text-white">
+                        <i data-lucide="calculator"></i>
                     </div>
-                  ))}
-                  <div className="mt-4 p-4 bg-emerald-50 rounded-xl flex justify-between items-center">
-                    <span className="text-sm font-bold text-emerald-800">Final Net</span>
-                    <span className="text-2xl font-black text-emerald-600">{fmt(results.netIncome)}</span>
-                  </div>
-                </div>
-              </div>
+                    UK Tax Dashboard
+                </h1>
+                <p class="text-slate-500 mt-1">Salary & Dividend Liability Calculator</p>
             </div>
+            
+            <div class="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden" id="year-toggle">
+                <button onclick="setYear('2024/25')" id="btn-2024" class="px-6 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white shadow-md">2024/25</button>
+                <button onclick="setYear('2025/26')" id="btn-2025" class="px-6 py-2 rounded-lg text-sm font-bold transition-all text-slate-500 hover:bg-gray-50">2025/26</button>
+            </div>
+        </header>
 
-            {/* Detailed Band Breakdown */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-400 mb-6 flex items-center gap-2 uppercase tracking-wider">
-                <Hash size={16} /> Band-by-Band Breakdown
-              </h3>
-              
-              <div className="space-y-8">
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <ShieldCheck size={18} className="text-blue-500" />
-                    <span className="font-bold text-slate-700">Salary Taxation</span>
-                    <div className="h-px bg-slate-100 grow"></div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {results.salaryBands.map((band, i) => (
-                      <div key={i} className="bg-blue-50/50 border border-blue-100 p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-blue-400 uppercase truncate">{band.label}</p>
-                        <p className="text-lg font-black text-blue-800">{fmt(band.tax)}</p>
-                        <p className="text-[10px] text-blue-500 mt-1">on {fmt(band.amount)}</p>
-                      </div>
-                    ))}
-                    <div className="bg-rose-50 border border-rose-100 p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-rose-400 uppercase">Nat. Insurance</p>
-                        <p className="text-lg font-black text-rose-800">{fmt(results.niDue)}</p>
-                        <p className="text-[10px] text-rose-500 mt-1">Standard Rates</p>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- Left Column: Inputs -->
+            <div class="lg:col-span-4 space-y-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h2 class="text-lg font-bold mb-6 flex items-center gap-2">
+                        <i data-lucide="wallet" class="text-indigo-500 w-5 h-5"></i>
+                        Annual Income
+                    </h2>
+                    
+                    <div class="space-y-5">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Gross Salary</label>
+                            <div class="relative group">
+                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">£</span>
+                                <input type="number" id="salary-input" value="55000" oninput="updateDashboard()"
+                                    class="w-full pl-9 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl outline-none transition-all font-bold text-lg">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-wider">Gross Dividends</label>
+                            <div class="relative group">
+                                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">£</span>
+                                <input type="number" id="dividend-input" value="10000" oninput="updateDashboard()"
+                                    class="w-full pl-9 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-xl outline-none transition-all font-bold text-lg">
+                            </div>
+                        </div>
                     </div>
-                  </div>
+
+                    <div id="taper-alert" class="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100 flex gap-3 hidden">
+                        <i data-lucide="info" class="text-amber-600 shrink-0 w-5 h-5"></i>
+                        <p class="text-xs text-amber-800 leading-relaxed">
+                            <span class="font-bold">Allowance Taper:</span> Your income exceeds £100k. Your Personal Allowance has been reduced.
+                        </p>
+                    </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <ShieldCheck size={18} className="text-amber-500" />
-                    <span className="font-bold text-slate-700">Dividend Taxation</span>
-                    <div className="h-px bg-slate-100 grow"></div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {results.dividendBands.map((band, i) => (
-                      <div key={i} className="bg-amber-50 border border-amber-100 p-3 rounded-xl">
-                        <p className="text-[10px] font-bold text-amber-500 uppercase truncate">{band.label}</p>
-                        <p className="text-lg font-black text-amber-900">{fmt(band.tax)}</p>
-                        <p className="text-[10px] text-amber-600 mt-1">on {fmt(band.amount)}</p>
-                      </div>
-                    ))}
-                  </div>
+                <div class="bg-indigo-700 p-6 rounded-2xl text-white shadow-xl shadow-indigo-100">
+                    <p class="text-indigo-200 text-xs font-bold uppercase tracking-widest mb-1">Take Home Pay</p>
+                    <h3 class="text-4xl font-black mb-1" id="net-pay-display">£0.00</h3>
+                    <div class="flex items-center gap-2 text-indigo-200 text-sm">
+                        <i data-lucide="arrow-down-circle" class="w-4 h-4"></i>
+                        <span id="monthly-pay-display">≈ £0.00 per month</span>
+                    </div>
                 </div>
-              </div>
             </div>
 
-            <div className="bg-slate-900 rounded-2xl p-6 text-white relative overflow-hidden shadow-xl">
-               <HelpCircle className="absolute -bottom-6 -right-6 text-white/5" size={160} />
-               <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-                 Tax Planning Tip
-               </h3>
-               <div className="grid md:grid-cols-2 gap-6 text-sm text-slate-400 leading-relaxed">
-                 <p>
-                   <span className="text-white font-bold">The Stacking Effect:</span> Dividends are considered the "top slice" of your income. Because they sit on top of your salary, they often jump straight into higher tax brackets.
-                 </p>
-                 <p>
-                   <span className="text-white font-bold">NI Savings:</span> Dividends attract no National Insurance, which is why business owners often prefer a low-salary, high-dividend strategy.
-                 </p>
-               </div>
+            <!-- Right Column: Results -->
+            <div class="lg:col-span-8 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Chart -->
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center">
+                        <h3 class="text-sm font-bold text-slate-400 flex items-center gap-2 self-start mb-4 uppercase tracking-wider">
+                            <i data-lucide="pie-chart" class="w-4 h-4"></i> Income Split
+                        </h3>
+                        <div class="h-[240px] w-full flex items-center justify-center">
+                            <canvas id="incomeChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                        <h3 class="text-sm font-bold text-slate-400 flex items-center gap-2 mb-6 uppercase tracking-wider">
+                            <i data-lucide="trending-up" class="w-4 h-4"></i> Summary
+                        </h3>
+                        <div class="space-y-4 flex-grow flex flex-col justify-center">
+                            <div class="flex justify-between items-center py-2 border-b border-slate-50">
+                                <span class="text-sm text-slate-500">Total Gross</span>
+                                <span class="font-bold text-slate-800" id="summary-gross">£0.00</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-50">
+                                <span class="text-sm text-slate-500">Salary Tax</span>
+                                <span class="font-bold text-blue-600" id="summary-salary-tax">-£0.00</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-50">
+                                <span class="text-sm text-slate-500">Dividend Tax</span>
+                                <span class="font-bold text-amber-600" id="summary-div-tax">-£0.00</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-slate-50">
+                                <span class="text-sm text-slate-500">Nat. Insurance</span>
+                                <span class="font-bold text-rose-500" id="summary-ni">-£0.00</span>
+                            </div>
+                            <div class="mt-4 p-4 bg-emerald-50 rounded-xl flex justify-between items-center">
+                                <span class="text-sm font-bold text-emerald-800">Final Net</span>
+                                <span class="text-2xl font-black text-emerald-600" id="summary-net">£0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Breakdown -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-bold text-slate-400 mb-6 flex items-center gap-2 uppercase tracking-wider">
+                        <i data-lucide="hash" class="w-4 h-4"></i> Detailed Breakdown
+                    </h3>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 mb-3 uppercase">Salary Bands</p>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="salary-band-container">
+                                <!-- JS injected -->
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 mb-3 uppercase">Dividend Bands</p>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="dividend-band-container">
+                                <!-- JS injected -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 rounded-2xl p-6 text-white relative overflow-hidden shadow-xl">
+                    <h3 class="text-lg font-bold mb-3">HMRC Stacking Rule</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed max-w-lg">
+                        In the UK, dividends are taxed as the "top slice" of your income. They are added on top of your salary, which is why dividends often fall into higher tax brackets even if the dividend amount itself is small.
+                    </p>
+                </div>
             </div>
-          </div>
         </div>
         
-        <footer className="mt-12 py-8 border-t border-slate-200 text-center text-slate-400 text-xs">
-          <p>© {new Date().getFullYear()} UK Tax Dashboard • Estimates only • Based on standard 1257L tax code</p>
+        <footer class="mt-12 py-8 border-t border-slate-200 text-center text-slate-400 text-xs">
+            <p>© <span id="current-year"></span> UK Tax Dashboard • Based on standard 1257L tax code</p>
         </footer>
-      </div>
     </div>
-  );
-};
 
-export default App;
+    <script>
+        // --- State ---
+        let currentTaxYear = '2024/25';
+        let incomeChart = null;
+
+        const CONFIG = {
+            '2024/25': {
+                personalAllowance: 12570,
+                taperThreshold: 100000,
+                basicRateMax: 50270,
+                higherRateMax: 125140,
+                dividendAllowance: 500,
+                niPrimaryThreshold: 12570,
+                niUpperLimit: 50270,
+                niRates: { basic: 0.08, upper: 0.02 }
+            },
+            '2025/26': {
+                personalAllowance: 12570,
+                taperThreshold: 100000,
+                basicRateMax: 50270,
+                higherRateMax: 125140,
+                dividendAllowance: 500,
+                niPrimaryThreshold: 12570,
+                niUpperLimit: 50270,
+                niRates: { basic: 0.08, upper: 0.02 }
+            }
+        };
+
+        function fmt(v) {
+            return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(v);
+        }
+
+        function setYear(year) {
+            currentTaxYear = year;
+            const btn24 = document.getElementById('btn-2024');
+            const btn25 = document.getElementById('btn-2025');
+            
+            if (year === '2024/25') {
+                btn24.className = "px-6 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white shadow-md";
+                btn25.className = "px-6 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-gray-50";
+            } else {
+                btn24.className = "px-6 py-2 rounded-lg text-sm font-bold text-slate-500 hover:bg-gray-50";
+                btn25.className = "px-6 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white shadow-md";
+            }
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            const salary = parseFloat(document.getElementById('salary-input').value) || 0;
+            const dividends = parseFloat(document.getElementById('dividend-input').value) || 0;
+            const cfg = CONFIG[currentTaxYear];
+            const totalIncome = salary + dividends;
+
+            // 1. PA Taper
+            let adjustedPA = cfg.personalAllowance;
+            if (totalIncome > cfg.taperThreshold) {
+                const reduction = Math.floor((totalIncome - cfg.taperThreshold) / 2);
+                adjustedPA = Math.max(0, cfg.personalAllowance - reduction);
+            }
+            document.getElementById('taper-alert').classList.toggle('hidden', adjustedPA >= cfg.personalAllowance);
+
+            // 2. Salary Tax
+            let remSalary = salary;
+            let salTax = 0;
+            const salBands = [];
+
+            const paUsed = Math.min(salary, adjustedPA);
+            salBands.push({ label: 'Allowance', amount: paUsed, tax: 0 });
+            remSalary -= paUsed;
+
+            const basicSize = Math.max(0, cfg.basicRateMax - adjustedPA);
+            const inBasic = Math.min(remSalary, basicSize);
+            if (inBasic > 0) {
+                const t = inBasic * 0.20;
+                salBands.push({ label: 'Basic (20%)', amount: inBasic, tax: t });
+                salTax += t;
+                remSalary -= inBasic;
+            }
+
+            const higherSize = cfg.higherRateMax - cfg.basicRateMax;
+            const inHigher = Math.min(remSalary, higherSize);
+            if (inHigher > 0) {
+                const t = inHigher * 0.40;
+                salBands.push({ label: 'Higher (40%)', amount: inHigher, tax: t });
+                salTax += t;
+                remSalary -= inHigher;
+            }
+
+            if (remSalary > 0) {
+                const t = remSalary * 0.45;
+                salBands.push({ label: 'Add. (45%)', amount: remSalary, tax: t });
+                salTax += t;
+            }
+
+            // 3. NI
+            let ni = 0;
+            if (salary > cfg.niPrimaryThreshold) {
+                const bNi = Math.min(salary, cfg.niUpperLimit) - cfg.niPrimaryThreshold;
+                ni += bNi * cfg.niRates.basic;
+                if (salary > cfg.niUpperLimit) ni += (salary - cfg.niUpperLimit) * cfg.niRates.upper;
+            }
+
+            // 4. Dividend Tax
+            let remPA = Math.max(0, adjustedPA - salary);
+            let remDivs = dividends;
+            let divTax = 0;
+            const divBands = [];
+
+            const divInPA = Math.min(remDivs, remPA);
+            if (divInPA > 0) {
+                divBands.push({ label: 'Allowance (PA)', amount: divInPA, tax: 0 });
+                remDivs -= divInPA;
+            }
+
+            const divAllUsed = Math.min(remDivs, cfg.dividendAllowance);
+            if (divAllUsed > 0) {
+                divBands.push({ label: 'Div. Allowance', amount: divAllUsed, tax: 0 });
+                remDivs -= divAllUsed;
+            }
+
+            if (remDivs > 0) {
+                let pos = salary + (dividends - remDivs);
+                if (pos < cfg.basicRateMax) {
+                    const space = cfg.basicRateMax - pos;
+                    const amt = Math.min(remDivs, space);
+                    const t = amt * 0.0875;
+                    divBands.push({ label: 'Basic (8.75%)', amount: amt, tax: t });
+                    divTax += t;
+                    remDivs -= amt;
+                    pos += amt;
+                }
+                if (remDivs > 0 && pos < cfg.higherRateMax) {
+                    const space = cfg.higherRateMax - pos;
+                    const amt = Math.min(remDivs, space);
+                    const t = amt * 0.3375;
+                    divBands.push({ label: 'Higher (33.75%)', amount: amt, tax: t });
+                    divTax += t;
+                    remDivs -= amt;
+                    pos += amt;
+                }
+                if (remDivs > 0) {
+                    const t = remDivs * 0.3935;
+                    divBands.push({ label: 'Add. (39.35%)', amount: remDivs, tax: t });
+                    divTax += t;
+                }
+            }
+
+            const totalTax = salTax + divTax + ni;
+            const net = totalIncome - totalTax;
+
+            // UI Update
+            document.getElementById('net-pay-display').textContent = fmt(net);
+            document.getElementById('monthly-pay-display').textContent = `≈ ${fmt(net/12)} per month`;
+            document.getElementById('summary-gross').textContent = fmt(totalIncome);
+            document.getElementById('summary-salary-tax').textContent = `-${fmt(salTax)}`;
+            document.getElementById('summary-div-tax').textContent = `-${fmt(divTax)}`;
+            document.getElementById('summary-ni').textContent = `-${fmt(ni)}`;
+            document.getElementById('summary-net').textContent = fmt(net);
+
+            // Render Bands
+            const salContainer = document.getElementById('salary-band-container');
+            salContainer.innerHTML = salBands.map(b => `
+                <div class="bg-blue-50/50 border border-blue-100 p-3 rounded-xl">
+                    <p class="text-[10px] font-bold text-blue-400 uppercase truncate">${b.label}</p>
+                    <p class="text-lg font-black text-blue-800">${fmt(b.tax)}</p>
+                    <p class="text-[10px] text-blue-500 mt-1">on ${fmt(b.amount)}</p>
+                </div>
+            `).join('') + `
+                <div class="bg-rose-50 border border-rose-100 p-3 rounded-xl">
+                    <p class="text-[10px] font-bold text-rose-400 uppercase">Nat. Insurance</p>
+                    <p class="text-lg font-black text-rose-800">${fmt(ni)}</p>
+                </div>
+            `;
+
+            const divContainer = document.getElementById('dividend-band-container');
+            divContainer.innerHTML = divBands.map(b => `
+                <div class="bg-amber-50 border border-amber-100 p-3 rounded-xl">
+                    <p class="text-[10px] font-bold text-amber-500 uppercase truncate">${b.label}</p>
+                    <p class="text-lg font-black text-amber-900">${fmt(b.tax)}</p>
+                    <p class="text-[10px] text-amber-600 mt-1">on ${fmt(b.amount)}</p>
+                </div>
+            `).join('') || '<p class="text-xs text-slate-400 italic">No dividends entered</p>';
+
+            updateChart(net, salTax, divTax, ni);
+        }
+
+        function updateChart(net, salTax, divTax, ni) {
+            const data = [net, salTax, divTax, ni];
+            const labels = ['Net Pay', 'Salary Tax', 'Div Tax', 'NI'];
+            const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
+
+            if (!incomeChart) {
+                const ctx = document.getElementById('incomeChart').getContext('2d');
+                incomeChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{ data: data, backgroundColor: colors, borderWidth: 0 }]
+                    },
+                    options: {
+                        cutout: '65%',
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            } else {
+                incomeChart.data.datasets[0].data = data;
+                incomeChart.update();
+            }
+        }
+
+        // Init
+        document.getElementById('current-year').textContent = new Date().getFullYear();
+        window.onload = () => {
+            lucide.createIcons();
+            updateDashboard();
+        };
+    </script>
+</body>
+</html>
